@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>영단어 퀴즈</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--fg:#1d1d1f;--muted:#6b6b70;--line:#e2e2e0;--accent:#2f6fde;--accent-fg:#fff;--ok:#1f8a4c;--ok-bg:#e3f4ea;--bad:#c9372c;--bad-bg:#fbe7e5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141416;--card:#1e1e21;--fg:#ededef;--muted:#9a9aa0;--line:#2e2e33;--accent:#5b8ff0;--accent-fg:#0b0b0c;--ok:#4cc27e;--ok-bg:#16301f;--bad:#f06a5e;--bad-bg:#3a1a17}}
+:root[data-theme="dark"]{--bg:#141416;--card:#1e1e21;--fg:#ededef;--muted:#9a9aa0;--line:#2e2e33;--accent:#5b8ff0;--accent-fg:#0b0b0c;--ok:#4cc27e;--ok-bg:#16301f;--bad:#f06a5e;--bad-bg:#3a1a17}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+main{max-width:560px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:24px;margin:0 0 4px}
+.muted{color:var(--muted);font-size:15px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:16px}
+.label{font-weight:600;margin:0 0 8px}
+.seg{display:flex;gap:8px;flex-wrap:wrap}
+.seg button{flex:1;min-width:84px}
+button{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;min-height:48px}
+button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);font-weight:600}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent);font-weight:600;width:100%;margin-top:16px}
+.row{display:flex;gap:8px;margin-top:16px}.row>button{flex:1;margin-top:0}
+.top{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:15px}
+.top .home{min-height:36px;padding:6px 12px;font-size:15px;color:var(--muted)}
+.bar{height:4px;background:var(--line);border-radius:2px;margin:8px 0 0;overflow:hidden}.bar>i{display:block;height:100%;background:var(--accent)}
+.prompt{display:flex;align-items:center;justify-content:center;gap:10px;text-align:center;font-size:32px;font-weight:700;margin:28px 0 8px;word-break:keep-all}
+.prompt.ko{font-size:24px}
+.pron{text-align:center;color:var(--muted);min-height:1.5em}
+.voice-row{display:flex;gap:8px;align-items:center}
+.review-row{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.review-btn{flex:1;font-weight:600;border-color:var(--accent);color:var(--accent)}
+.list li.playing{background:var(--ok-bg);border-radius:10px;padding-left:8px;padding-right:8px}
+.review-row select,.voice-row select{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-height:48px}
+.review-row select{flex:none;width:auto}
+.hint-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px}
+.hint{font-family:ui-monospace,Menlo,monospace;font-size:20px;letter-spacing:.12em;color:var(--accent);word-break:break-all;min-height:1.5em}
+.hint-btn{min-height:40px;padding:6px 12px;font-size:15px;flex:none}
+.speak{min-height:40px;padding:6px 10px;font-size:18px;line-height:1}
+.choices{display:grid;gap:10px;margin-top:20px}
+.choices button{text-align:left;display:flex;gap:10px}
+.choices .n{color:var(--muted);font-variant-numeric:tabular-nums}
+.correct{background:var(--ok-bg)!important;border-color:var(--ok)!important}
+.wrong{background:var(--bad-bg)!important;border-color:var(--bad)!important}
+input[type=text]{width:100%;font:inherit;font-size:20px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--fg);margin-top:20px}
+input:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.feedback{margin-top:16px;padding:12px 14px;border-radius:12px;font-weight:600}
+.feedback.ok{background:var(--ok-bg);color:var(--ok)}.feedback.bad{background:var(--bad-bg);color:var(--bad)}
+.feedback small{display:block;font-weight:400;color:var(--fg);margin-top:4px}
+.score{font-size:44px;font-weight:800;text-align:center;margin:8px 0 0}
+.list{list-style:none;padding:0;margin:0}
+.list li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.list li:first-child{border-top:0}
+.list .w{font-weight:600}.list .m{color:var(--muted);font-size:15px}.list div{flex:1}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script id="logic">
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else q = false;
+      } else field += c;
+    } else if (c === '"') q = true;
+    else if (c === ',') { row.push(field); field = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      row.push(field); rows.push(row); row = []; field = '';
+    } else field += c;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function cleanWords(rows) {
+  const seen = new Set(), out = [];
+  for (const r of rows) {
+    const word = (r[0] || '').trim(), meaning = (r[1] || '').trim(), pron = (r[2] || '').trim();
+    const key = word.toLowerCase();
+    if (!word || !meaning || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ word, meaning, pron });
+  }
+  return out;
+}
+
+function normalize(s) {
+  return s.replace(/[’‘]/g, "'").toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+function checkTyped(input, answer) {
+  const a = normalize(input);
+  return a !== '' && a === normalize(answer);
+}
+
+function shuffle(arr, rng = Math.random) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function canMC(pool) {
+  return new Set(pool.map(w => w.meaning)).size >= 4;
+}
+
+function buildQuiz(items, pool, count, mode, rng = Math.random) {
+  const n = count === 'all' ? items.length : Math.min(count, items.length);
+  const meanings = [...new Set(pool.map(w => w.meaning))];
+  const mcOk = meanings.length >= 4;
+  return shuffle(items, rng).slice(0, n).map(item => {
+    const wantMC = mode === 'mc' || (mode === 'mix' && rng() < 0.5);
+    if (!wantMC || !mcOk) return { type: 'type', item };
+    const others = shuffle(meanings.filter(m => m !== item.meaning), rng).slice(0, 3);
+    return { type: 'mc', item, choices: shuffle([item.meaning, ...others], rng) };
+  });
+}
+
+// 앞에서부터 글자 n개만 보이고 나머지 글자는 _ 로 가린다 (공백·기호는 그대로)
+function maskWord(word, n) {
+  let shown = 0;
+  return [...word].map(c => {
+    if (!/[\p{L}\p{N}]/u.test(c)) return c;
+    return shown++ < n ? c : '_';
+  }).join('');
+}
+
+// 복습 듣기 순서: 단어마다 (영어 → 뜻)을 times번 반복한 뒤 다음 단어
+function buildReviewQueue(items, times) {
+  const q = [];
+  items.forEach((w, idx) => {
+    for (let t = 0; t < times; t++) {
+      q.push({ idx, text: w.word, lang: 'en-US' }, { idx, text: w.meaning, lang: 'ko-KR' });
+    }
+  });
+  return q;
+}
+
+// macOS 효과음/장난용 음성 — 단어 발음용으로 쓰지 않는다
+const NOVELTY_VOICES = ['Albert', 'Bad News', 'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos', 'Deranged', 'Fred', 'Good News', 'Hysterical', 'Jester', 'Junior', 'Kathy', 'Organ', 'Pipe Organ', 'Ralph', 'Superstar', 'Trinoids', 'Whisper', 'Wobble', 'Zarvox'];
+// macOS Eloquence 계열 — 기계음이라 마지막 순위
+const ELOQUENCE_VOICES = ['Eddy', 'Flo', 'Grandma', 'Grandpa', 'Reed', 'Rocko', 'Sandy', 'Shelley'];
+const PREFERRED_VOICES = ['Samantha', 'Google US English', 'Microsoft Aria', 'Microsoft Jenny', 'Microsoft Guy', 'Alex', 'Yuna', 'Google 한국의'];
+
+function rankVoices(voices, lang) {
+  const norm = v => (v.lang || '').replace('_', '-');
+  const base = v => v.name.replace(/\s*\(.*$/, '');
+  const score = v => {
+    let s = 0;
+    if (norm(v) === lang) s += 100;
+    if (/premium|enhanced|향상|고품질|siri/i.test(v.name)) s += 50;
+    if (PREFERRED_VOICES.some(p => v.name.startsWith(p))) s += 30;
+    if (ELOQUENCE_VOICES.includes(base(v))) s -= 200;
+    return s;
+  };
+  return voices
+    .filter(v => norm(v).startsWith(lang.slice(0, 2)) && !NOVELTY_VOICES.includes(base(v)))
+    .map((v, i) => ({ v, i, s: score(v) }))
+    .sort((a, b) => b.s - a.s || a.i - b.i)
+    .map(x => x.v);
+}
+
+function pickVoice(voices, lang, savedName) {
+  const saved = savedName && voices.find(v => v.name === savedName);
+  return saved || rankVoices(voices, lang)[0] || null;
+}
+</script>
+<script>
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/1PGGYoqCrWfusIRTenpZeu9QXCS3XI5hHcJEh7mjM3XY/gviz/tq?tqx=out:csv&gid=0';
+const app = document.getElementById('app');
+const state = { words: [], count: 10, mode: 'mix', lastItems: null, quiz: [], idx: 0, score: 0, wrong: [], answered: false };
+
+function h(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (k === 'class') e.className = v;
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k);
+  return e;
+}
+function show(...nodes) { app.replaceChildren(...nodes.filter(Boolean)); window.scrollTo(0, 0); }
+
+async function loadWords() {
+  const res = await fetch(CSV_URL, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const text = await res.text();
+  if (/^\s*</.test(text)) throw new Error('시트가 공개 상태가 아닙니다 (링크가 있는 모든 사용자: 뷰어)');
+  return cleanWords(parseCSV(text));
+}
+
+async function init() {
+  state.onKey = null;
+  if (TTS) stopReview();
+  show(h('h1', {}, '영단어 퀴즈'), h('p', { class: 'muted' }, '시트에서 단어를 불러오는 중…'));
+  try {
+    state.words = await loadWords();
+    if (!state.words.length) throw new Error('시트에 단어가 없습니다');
+    renderStart();
+  } catch (e) {
+    show(h('h1', {}, '영단어 퀴즈'),
+      h('div', { class: 'card' },
+        h('p', { class: 'label' }, '단어를 불러오지 못했어요'),
+        h('p', { class: 'muted' }, String(e.message || e)),
+        h('button', { class: 'primary', onclick: init }, '다시 시도')));
+  }
+}
+
+function seg(options, current, onPick) {
+  return h('div', { class: 'seg' }, options.map(([val, label, disabled]) =>
+    h('button', { 'aria-pressed': String(val === current), disabled: !!disabled, onclick: () => onPick(val) }, label)));
+}
+
+function renderStart() {
+  const mcOk = canMC(state.words);
+  if (!mcOk && state.mode !== 'type') state.mode = 'type';
+  const n = state.words.length;
+  show(
+    h('h1', {}, '영단어 퀴즈'),
+    h('p', { class: 'muted' }, `시트에서 단어 ${n}개를 불러왔어요`),
+    h('div', { class: 'card' },
+      h('p', { class: 'label' }, '문제 수'),
+      seg([[10, '10'], [20, '20'], ['all', `전체 (${n})`]], state.count, v => { state.count = v; renderStart(); }),
+      h('p', { class: 'label', style: 'margin-top:20px' }, '유형'),
+      seg([['mc', '뜻 맞추기', !mcOk], ['type', '단어 쓰기'], ['mix', '섞어서', !mcOk]], state.mode, v => { state.mode = v; renderStart(); }),
+      !mcOk && h('p', { class: 'muted' }, '뜻 맞추기는 서로 다른 뜻이 4개 이상 있어야 해요.'),
+      voicePicker(),
+      h('button', { class: 'primary', onclick: () => startQuiz(state.words) }, '시작')));
+}
+
+const TTS = 'speechSynthesis' in window;
+let voices = [];
+const VOICE_KEY = 'vocab.enVoice';
+function savedVoice() { try { return localStorage.getItem(VOICE_KEY); } catch { return null; } }
+function saveVoice(name) { try { localStorage.setItem(VOICE_KEY, name); } catch {} }
+function loadVoices() {
+  voices = speechSynthesis.getVoices();
+  const old = document.getElementById('voice-pick');
+  if (old) old.replaceWith(voicePicker());
+}
+if (TTS) { loadVoices(); speechSynthesis.addEventListener('voiceschanged', loadVoices); }
+function utter(text, lang) {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = lang;
+  const v = pickVoice(voices, lang, lang === 'en-US' ? savedVoice() : null);
+  if (v) u.voice = v;
+  if (lang === 'en-US') u.rate = 0.9;
+  return u;
+}
+function speak(text, lang) {
+  if (!TTS) return;
+  stopReview();
+  speechSynthesis.speak(utter(text, lang));
+}
+
+// 복습 듣기: 한 번에 한 문장씩 이어서 읽는다. reviewRun이 바뀌면(멈춤·다른 소리·화면 이동) 중단
+const TIMES_KEY = 'vocab.reviewTimes';
+function savedTimes() { try { return Number(localStorage.getItem(TIMES_KEY)) || 2; } catch { return 2; } }
+function saveTimes(n) { try { localStorage.setItem(TIMES_KEY, String(n)); } catch {} }
+let reviewRun = 0, reviewing = false, currentUtterance = null;
+function speakAsync(text, lang) {
+  return new Promise(resolve => {
+    const u = utter(text, lang);
+    u.onend = u.onerror = resolve;
+    currentUtterance = u; // 일부 브라우저에서 GC로 onend가 안 오는 문제 방지
+    speechSynthesis.speak(u);
+  });
+}
+const wait = ms => new Promise(r => setTimeout(r, ms));
+function stopReview() {
+  reviewRun++;
+  reviewing = false;
+  if (TTS) speechSynthesis.cancel();
+  document.querySelectorAll('.list li.playing').forEach(li => li.classList.remove('playing'));
+  const btn = document.getElementById('review-btn');
+  if (btn) btn.textContent = '▶ 전체 듣기';
+}
+async function playReview(items, times, lis, btn) {
+  stopReview();
+  const run = reviewRun;
+  reviewing = true;
+  btn.textContent = '■ 멈춤';
+  for (const step of buildReviewQueue(items, times)) {
+    if (run !== reviewRun) return;
+    lis.forEach((li, i) => li.classList.toggle('playing', i === step.idx));
+    lis[step.idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    await speakAsync(step.text, step.lang);
+    if (run !== reviewRun) return;
+    await wait(step.lang === 'ko-KR' ? 700 : 300);
+  }
+  if (run === reviewRun) stopReview();
+}
+function speakBtn(text, lang) {
+  return TTS ? h('button', { class: 'speak', 'aria-label': '발음 듣기', title: '듣기', onclick: () => speak(text, lang) }, '🔊') : null;
+}
+
+function voicePicker() {
+  const list = TTS ? rankVoices(voices, 'en-US') : [];
+  if (!list.length) return h('div', { id: 'voice-pick' });
+  const current = pickVoice(voices, 'en-US', savedVoice());
+  const sel = h('select', { 'aria-label': '영어 음성', onchange: e => { saveVoice(e.target.value); speak('Hello, nice to meet you.', 'en-US'); } },
+    list.map(v => h('option', { value: v.name, selected: current && v.name === current.name }, `${v.name} · ${v.lang.replace('_', '-')}`)));
+  return h('div', { id: 'voice-pick' },
+    h('p', { class: 'label', style: 'margin-top:20px' }, '영어 음성'),
+    h('div', { class: 'voice-row' }, sel,
+      h('button', { class: 'speak', 'aria-label': '미리 듣기', title: '미리 듣기', onclick: () => speak('Hello, nice to meet you.', 'en-US') }, '🔊')));
+}
+
+function startQuiz(items) {
+  if (TTS) stopReview();
+  state.lastItems = items;
+  state.quiz = buildQuiz(items, state.words, state.count, state.mode);
+  state.idx = 0; state.score = 0; state.wrong = [];
+  renderQuestion();
+}
+
+function goHome() {
+  const started = state.idx > 0 || state.answered;
+  if (started && !confirm('문제 풀기를 그만두고 처음 화면으로 갈까요?')) return;
+  if (TTS) speechSynthesis.cancel();
+  init();
+}
+
+function header() {
+  const total = state.quiz.length;
+  return [
+    h('div', { class: 'top' },
+      h('button', { class: 'home', onclick: goHome }, '← 홈'),
+      h('span', {}, `${state.idx + 1} / ${total} · 정답 ${state.score}`)),
+    h('div', { class: 'bar' }, h('i', { style: `width:${(state.idx / total) * 100}%` })),
+  ];
+}
+
+function nextButton() {
+  const last = state.idx === state.quiz.length - 1;
+  return h('button', { class: 'primary', id: 'next', onclick: next }, last ? '결과 보기' : '다음');
+}
+
+function record(ok, item) {
+  if (ok) state.score++; else state.wrong.push(item);
+  state.answered = true;
+}
+
+function renderQuestion() {
+  state.answered = false;
+  const q = state.quiz[state.idx];
+  const { item } = q;
+  if (q.type === 'mc') {
+    const choiceBtns = q.choices.map((m, i) => h('button', { onclick: () => answerMC(i) }, h('span', { class: 'n' }, i + 1), h('span', {}, m)));
+    const card = h('div', { class: 'card' },
+      h('div', { class: 'prompt' }, item.word, speakBtn(item.word, 'en-US')),
+      h('div', { class: 'pron', id: 'pron' }),
+      h('div', { class: 'choices' }, choiceBtns),
+      h('div', { id: 'after' }));
+    show(...header(), card);
+    function answerMC(i) {
+      if (state.answered) return;
+      const ok = q.choices[i] === item.meaning;
+      record(ok, item);
+      choiceBtns.forEach((b, j) => {
+        b.disabled = true;
+        if (q.choices[j] === item.meaning) b.classList.add('correct');
+        else if (j === i) b.classList.add('wrong');
+      });
+      document.getElementById('pron').textContent = item.pron;
+      const nb = nextButton();
+      document.getElementById('after').replaceChildren(nb);
+      nb.focus();
+    }
+    state.onKey = e => { const n = Number(e.key); if (n >= 1 && n <= 4) answerMC(n - 1); };
+    speak(item.word, 'en-US');
+  } else {
+    const input = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: '영어로 입력 후 Enter', 'aria-label': '정답 입력' });
+    let hints = 0;
+    const hintBox = h('div', { class: 'hint', 'aria-live': 'polite' });
+    const hintBtn = h('button', { type: 'button', class: 'hint-btn', onclick: () => {
+      hints = hints ? hints + 1 : 2;
+      const masked = maskWord(item.word, hints);
+      hintBox.textContent = masked;
+      if (masked === item.word) hintBtn.disabled = true;
+      input.focus();
+    } }, '💡 힌트');
+    const form = h('form', { onsubmit: e => {
+      e.preventDefault();
+      if (state.answered || !input.value.trim()) return;
+      const ok = checkTyped(input.value, item.word);
+      record(ok, item);
+      input.disabled = true;
+      hintBtn.disabled = true;
+      const fb = ok
+        ? h('div', { class: 'feedback ok' }, hints ? '정답! (힌트 사용) ' : '정답! ', item.word, item.pron && h('small', {}, item.pron))
+        : h('div', { class: 'feedback bad' }, '오답', h('small', {}, `내 답: ${input.value.trim()}`), h('small', {}, `정답: ${item.word}${item.pron ? '  (' + item.pron + ')' : ''}`));
+      const nb = nextButton();
+      document.getElementById('after').replaceChildren(fb, h('div', { class: 'row' }, speakBtn(item.word, 'en-US')), nb);
+      nb.focus();
+      speak(item.word, 'en-US');
+    } }, input);
+    const card = h('div', { class: 'card' },
+      h('div', { class: 'prompt ko' }, item.meaning, speakBtn(item.meaning, 'ko-KR')),
+      form,
+      h('div', { class: 'hint-row' }, hintBox, hintBtn),
+      h('div', { id: 'after' }));
+    show(...header(), card);
+    state.onKey = null;
+    input.focus();
+    speak(item.meaning, 'ko-KR');
+  }
+}
+
+function next() {
+  if (state.idx < state.quiz.length - 1) { state.idx++; renderQuestion(); }
+  else renderResult();
+}
+
+function renderResult() {
+  state.onKey = null;
+  const total = state.quiz.length, pct = Math.round((state.score / total) * 100);
+  const wrong = state.wrong;
+  const lis = wrong.map(w => h('li', {},
+    h('div', {}, h('div', { class: 'w' }, w.word), h('div', { class: 'm' }, w.meaning + (w.pron ? ' · ' + w.pron : ''))),
+    speakBtn(w.word, 'en-US')));
+  show(
+    h('h1', {}, '결과'),
+    h('div', { class: 'card' },
+      h('p', { class: 'score' }, `${state.score} / ${total}`),
+      h('p', { class: 'muted', style: 'text-align:center;margin:0' }, `정답률 ${pct}%`)),
+    wrong.length > 0 && h('div', { class: 'card' },
+      h('p', { class: 'label' }, `틀린 단어 ${wrong.length}개`),
+      reviewControls(wrong, lis),
+      h('ul', { class: 'list' }, lis)),
+    h('div', { class: 'row' },
+      wrong.length > 0 && h('button', { onclick: () => { const c = state.count; state.count = 'all'; startQuiz(wrong.slice()); state.count = c; } }, '틀린 것만 다시 풀기'),
+      h('button', { onclick: init }, '처음으로')));
+}
+
+function reviewControls(items, lis) {
+  if (!TTS) return null;
+  let times = savedTimes();
+  const sel = h('select', { 'aria-label': '반복 횟수', onchange: e => { times = Number(e.target.value); saveTimes(times); } },
+    [1, 2, 3].map(n => h('option', { value: n, selected: n === times }, `${n}회씩`)));
+  const btn = h('button', { id: 'review-btn', class: 'review-btn', onclick: () => reviewing ? stopReview() : playReview(items, times, lis, btn) }, '▶ 전체 듣기');
+  return h('div', { class: 'review-row' }, sel, btn);
+}
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (state.onKey) state.onKey(e);
+});
+
+init();
+</script>
+</body>
+</html>
