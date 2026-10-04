@@ -52,7 +52,8 @@ input:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:
 .list{list-style:none;padding:0;margin:0}
 .list li{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
 .list li:first-child{border-top:0}
-.list .w{font-weight:600}.list .m{color:var(--muted);font-size:15px}.list div{flex:1}
+.prompt>span{min-width:0;overflow-wrap:anywhere}
+.list .w{font-weight:600;overflow-wrap:anywhere}.list li>div{min-width:0}.list .m{color:var(--muted);font-size:15px}.list div{flex:1}
 </style>
 </head>
 <body>
@@ -82,7 +83,7 @@ function cleanWords(rows) {
   const seen = new Set(), out = [];
   for (const r of rows) {
     const word = (r[0] || '').trim(), meaning = (r[1] || '').trim(), pron = (r[2] || '').trim();
-    const key = word.toLowerCase();
+    const key = normalize(word);
     if (!word || !meaning || seen.has(key)) continue;
     seen.add(key);
     out.push({ word, meaning, pron });
@@ -90,8 +91,15 @@ function cleanWords(rows) {
   return out;
 }
 
+// 채점용 정규화: 대소문자·공백 무시, ~ 와 - 는 공백 취급
 function normalize(s) {
-  return s.replace(/[’‘]/g, "'").toLowerCase().trim().replace(/\s+/g, ' ');
+  return s.replace(/[’‘]/g, "'").replace(/[~-]/g, ' ').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+// 같은 뜻을 가진 단어는 모두 정답으로 인정 (뜻만 보고는 구별할 수 없으므로)
+function answersFor(item, pool) {
+  const same = pool.filter(w => w !== item && w.meaning === item.meaning).map(w => w.word);
+  return [item.word, ...same];
 }
 
 function checkTyped(input, answer) {
@@ -174,9 +182,9 @@ function pickVoice(voices, lang, savedName) {
 }
 </script>
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/1PGGYoqCrWfusIRTenpZeu9QXCS3XI5hHcJEh7mjM3XY/gviz/tq?tqx=out:csv&gid=0';
+const CSV_URL = 'https://docs.google.com/spreadsheets/d/1PGGYoqCrWfusIRTenpZeu9QXCS3XI5hHcJEh7mjM3XY/gviz/tq?tqx=out:csv&gid=0&headers=0';
 const app = document.getElementById('app');
-const state = { words: [], count: 10, mode: 'mix', lastItems: null, quiz: [], idx: 0, score: 0, wrong: [], answered: false };
+const state = { words: [], count: 10, mode: 'mix', quiz: [], idx: 0, score: 0, wrong: [], answered: false };
 
 function h(tag, attrs = {}, ...kids) {
   const e = document.createElement(tag);
@@ -192,7 +200,12 @@ function h(tag, attrs = {}, ...kids) {
 function show(...nodes) { app.replaceChildren(...nodes.filter(Boolean)); window.scrollTo(0, 0); }
 
 async function loadWords() {
-  const res = await fetch(CSV_URL, { cache: 'no-store' });
+  let res;
+  try {
+    res = await fetch(CSV_URL, { cache: 'no-store' });
+  } catch {
+    throw new Error('인터넷 연결을 확인하거나, 시트가 "링크가 있는 모든 사용자: 뷰어"로 공유되어 있는지 확인해 주세요.');
+  }
   if (!res.ok) throw new Error('HTTP ' + res.status);
   const text = await res.text();
   if (/^\s*</.test(text)) throw new Error('시트가 공개 상태가 아닙니다 (링크가 있는 모든 사용자: 뷰어)');
@@ -248,7 +261,11 @@ function loadVoices() {
   const old = document.getElementById('voice-pick');
   if (old) old.replaceWith(voicePicker());
 }
-if (TTS) { loadVoices(); speechSynthesis.addEventListener('voiceschanged', loadVoices); }
+if (TTS) {
+  loadVoices();
+  if (speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', loadVoices);
+  else speechSynthesis.onvoiceschanged = loadVoices;
+}
 function utter(text, lang) {
   const u = new SpeechSynthesisUtterance(text);
   u.lang = lang;
@@ -271,7 +288,9 @@ let reviewRun = 0, reviewing = false, currentUtterance = null;
 function speakAsync(text, lang) {
   return new Promise(resolve => {
     const u = utter(text, lang);
-    u.onend = u.onerror = resolve;
+    // onend가 오지 않는 경우(화면 잠금, 탭 전환 등)에도 멈추지 않도록 시간 제한
+    const timer = setTimeout(resolve, Math.max(4000, text.length * 150));
+    u.onend = u.onerror = () => { clearTimeout(timer); resolve(); };
     currentUtterance = u; // 일부 브라우저에서 GC로 onend가 안 오는 문제 방지
     speechSynthesis.speak(u);
   });
@@ -290,6 +309,7 @@ async function playReview(items, times, lis, btn) {
   const run = reviewRun;
   reviewing = true;
   btn.textContent = '■ 멈춤';
+  await wait(50); // Safari: cancel() 직후의 speak()가 무시되는 문제 방지
   for (const step of buildReviewQueue(items, times)) {
     if (run !== reviewRun) return;
     lis.forEach((li, i) => li.classList.toggle('playing', i === step.idx));
@@ -318,14 +338,14 @@ function voicePicker() {
 
 function startQuiz(items) {
   if (TTS) stopReview();
-  state.lastItems = items;
   state.quiz = buildQuiz(items, state.words, state.count, state.mode);
   state.idx = 0; state.score = 0; state.wrong = [];
   renderQuestion();
 }
 
 function goHome() {
-  const started = state.idx > 0 || state.answered;
+  const typing = document.querySelector('form input');
+  const started = state.idx > 0 || state.answered || (typing && typing.value.trim() !== '');
   if (started && !confirm('문제 풀기를 그만두고 처음 화면으로 갈까요?')) return;
   if (TTS) speechSynthesis.cancel();
   init();
@@ -358,7 +378,7 @@ function renderQuestion() {
   if (q.type === 'mc') {
     const choiceBtns = q.choices.map((m, i) => h('button', { onclick: () => answerMC(i) }, h('span', { class: 'n' }, i + 1), h('span', {}, m)));
     const card = h('div', { class: 'card' },
-      h('div', { class: 'prompt' }, item.word, speakBtn(item.word, 'en-US')),
+      h('div', { class: 'prompt' }, h('span', {}, item.word), speakBtn(item.word, 'en-US')),
       h('div', { class: 'pron', id: 'pron' }),
       h('div', { class: 'choices' }, choiceBtns),
       h('div', { id: 'after' }));
@@ -380,7 +400,7 @@ function renderQuestion() {
     state.onKey = e => { const n = Number(e.key); if (n >= 1 && n <= 4) answerMC(n - 1); };
     speak(item.word, 'en-US');
   } else {
-    const input = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', placeholder: '영어로 입력 후 Enter', 'aria-label': '정답 입력' });
+    const input = h('input', { type: 'text', autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false', placeholder: '영어로 입력 후 Enter', 'aria-label': '정답 입력' });
     let hints = 0;
     const hintBox = h('div', { class: 'hint', 'aria-live': 'polite' });
     const hintBtn = h('button', { type: 'button', class: 'hint-btn', onclick: () => {
@@ -393,7 +413,7 @@ function renderQuestion() {
     const form = h('form', { onsubmit: e => {
       e.preventDefault();
       if (state.answered || !input.value.trim()) return;
-      const ok = checkTyped(input.value, item.word);
+      const ok = answersFor(item, state.words).some(a => checkTyped(input.value, a));
       record(ok, item);
       input.disabled = true;
       hintBtn.disabled = true;
@@ -406,7 +426,7 @@ function renderQuestion() {
       speak(item.word, 'en-US');
     } }, input);
     const card = h('div', { class: 'card' },
-      h('div', { class: 'prompt ko' }, item.meaning, speakBtn(item.meaning, 'ko-KR')),
+      h('div', { class: 'prompt ko' }, h('span', {}, item.meaning), speakBtn(item.meaning, 'ko-KR')),
       form,
       h('div', { class: 'hint-row' }, hintBox, hintBtn),
       h('div', { id: 'after' }));
